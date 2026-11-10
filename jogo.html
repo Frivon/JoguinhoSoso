@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Eco-Sapiens: Word Builder (Traduzido)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body, html { background: #1a1a2e; color: #fff; font-family: sans-serif; overflow: hidden; width: 100%; height: 100%; }
+        #gameContainer { position: relative; width: 100%; height: 100%; overflow: hidden; }
+        
+        /* HUD Superior */
+        #hud { position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; flex-direction: column; gap: 5px; background: rgba(0,0,0,0.7); padding: 12px; border-radius: 8px; border: 1px solid #415a77; }
+        #targetBox { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 8px; font-weight: bold; border: 2px solid #00b4d8; text-align: right; }
+        
+        /* Letras e Elementos */
+        #player { position: absolute; width: 32px; height: 32px; background: #00b4d8; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid #fff; z-index: 5; box-shadow: 0 0 10px #00b4d8; }
+        .letter-node { position: absolute; width: 35px; height: 35px; background: #e0e1dd; color: #0d1b2a; font-weight: bold; font-size: 20px; display: flex; align-items: center; justify-content: center; border-radius: 8px; transform: translate(-50%, -50%); z-index: 3; box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 2px solid #778da9; }
+        
+        /* Botões e Avisos */
+        #actionBtn { position: absolute; bottom: 30px; right: 30px; width: 100px; height: 100px; background: #e63946; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 15px; z-index: 20; cursor: pointer; border: 3px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); text-align: center; }
+        #msg { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.7); padding: 8px; border-radius: 5px; font-size: 13px; max-width: 300px; }
+        
+        .highlight { color: #00b4d8; font-size: 24px; }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer">
+        <div id="hud">
+            <div>⭐ Fase: <span id="lblFase" class="highlight">1</span></div>
+            <div>⏳ Tempo: <span id="lblTempo">45</span>s</div>
+            <div>✍️ Sua palavra: <span id="lblSuaPalavra" style="color:#2a9d8f; font-weight:bold; letter-spacing:2px;"></span></div>
+        </div>
+        
+        <div id="targetBox">
+            <div>MONTE A PALAVRA/FRASE:</div>
+            <div id="lblObjetivo" class="highlight" style="letter-spacing: 3px; margin-top: 5px;">HELLO</div>
+        </div>
+
+        <div id="player"></div>
+        <div id="actionBtn">COLETAR<br>LETRA</div>
+        <div id="msg">Use as SETAS ou WASD para andar. Fique em cima da letra certa e clique no botão vermelho!</div>
+    </div>
+
+    <script>
+        const playerEl = document.getElementById('player');
+        const container = document.getElementById('gameContainer');
+        
+        // Banco de dados das fases com Frase e sua respectiva Tradução
+        const fases = [
+            { texto: "HELLO", traducao: "Olá" },
+            { texto: "WELCOME", traducao: "Bem-vindo" },
+            { texto: "GOOD MORNING", traducao: "Bom dia" },
+            { texto: "HOW ARE YOU", traducao: "Como você está?" },
+            { texto: "I LOVE CODING", traducao: "Eu amo programar" },
+            { texto: "ENGLISH IS FUN", traducao: "Inglês é divertido" }
+        ];
+        
+        let faseAtual = 0;
+        let letrasColetadas = "";
+        
+        let player = { x: window.innerWidth / 2, y: window.innerHeight / 2, speed: 5 };
+        let input = { x: 0, y: 0 };
+        let nodes = [];
+        let tempoRestante = 45;
+        let timerInterval;
+
+        window.addEventListener('keydown', e => {
+            if(e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.y = -1;
+            if(e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') input.y = 1;
+            if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.x = -1;
+            if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.x = 1;
+        });
+        window.addEventListener('keyup', e => {
+            if(['ArrowUp','w','W','ArrowDown','s','S'].includes(e.key)) input.y = 0;
+            if(['ArrowLeft','a','A','ArrowRight','d','D'].includes(e.key)) input.x = 0;
+        });
+
+        document.getElementById('actionBtn').addEventListener('click', () => {
+            let letraProcurada = obterProximaLetraNecessaria();
+            
+            nodes.forEach((node, index) => {
+                let dist = Math.sqrt(Math.pow(player.x - node.x, 2) + Math.pow(player.y - node.y, 2));
+                
+                if(dist < 50) {
+                    if(node.char === letraProcurada) {
+                        letrasColetadas += node.char;
+                        node.el.remove();
+                        nodes.splice(index, 1);
+                        
+                        verificarEspacosFaltantes();
+                        checarVitoriaFase();
+                    } else {
+                        alert(`Letra errada! Você precisa da letra "${letraProcurada}" agora.`);
+                    }
+                }
+            });
+        });
+
+        function obterProximaLetraNecessaria() {
+            let fraseObjetivo = fases[faseAtual].texto;
+            let idx = letrasColetadas.length;
+            if(idx < fraseObjetivo.length) {
+                return fraseObjetivo[idx];
+            }
+            return "";
+        }
+
+        function verificarEspacosFaltantes() {
+            while(obterProximaLetraNecessaria() === " ") {
+                letrasColetadas += " ";
+            }
+        }
+
+        function checarVitoriaFase() {
+            let fraseObjetivo = fases[faseAtual].texto;
+            let traducaoObjetivo = fases[faseAtual].traducao;
+
+            if(letrasColetadas === fraseObjetivo) {
+                // Alerta modificado para exibir a tradução da frase aprendida
+                alert(`✨ PARABÉNS! ✨\n\nVocê aprendeu:\n"${fraseObjetivo}" = "${traducaoObjetivo}"`);
+                
+                faseAtual++;
+                if(faseAtual < fases.length) {
+                    iniciarFase();
+                } else {
+                    alert("🏆 Incrível! Você dominou todas as expressões e concluiu o desafio!");
+                    faseAtual = 0;
+                    iniciarFase();
+                }
+            }
+        }
+
+        function iniciarFase() {
+            nodes.forEach(n => n.el.remove());
+            nodes = [];
+            
+            let fraseObjetivo = fases[faseAtual].texto;
+            letrasColetadas = "";
+            tempoRestante = 45 + (faseAtual * 15);
+            
+            player.x = window.innerWidth / 2;
+            player.y = window.innerHeight / 2;
+
+            document.getElementById('lblFase').innerText = faseAtual + 1;
+            document.getElementById('lblObjetivo').innerText = fraseObjetivo;
+            
+            let letrasParaGerar = fraseObjetivo.replace(/\s/g, '');
+            
+            const alfabeto = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            for(let i=0; i < 5; i++) {
+                letrasParaGerar += alfabeto[Math.floor(Math.random() * alfabeto.length)];
+            }
+
+            let embaralhado = letrasParaGerar.split('').sort(() => 0.5 - Math.random()).join('');
+
+            for(let i = 0; i < embaralhado.length; i++) {
+                spawnLetra(embaralhado[i]);
+            }
+        }
+
+        function spawnLetra(char) {
+            let el = document.createElement('div');
+            el.className = 'letter-node';
+            el.innerText = char;
+            
+            let x = Math.random() * (window.innerWidth - 100) + 50;
+            let y = Math.random() * (window.innerHeight - 200) + 100;
+            
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            container.appendChild(el);
+            nodes.push({ x, y, char, el });
+        }
+
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            tempoRestante--;
+            document.getElementById('lblTempo').innerText = tempoRestante;
+            if(tempoRestante <= 0) {
+                alert(`⏳ O tempo acabou! A frase era:\n"${fases[faseAtual].texto}" (${fases[faseAtual].traducao})\nTente novamente!`);
+                iniciarFase();
+            }
+        }, 1000);
+
+        function loop() {
+            player.x += input.x * player.speed;
+            player.y += input.y * player.speed;
+            
+            player.x = Math.max(15, Math.min(window.innerWidth - 15, player.x));
+            player.y = Math.max(15, Math.min(window.innerHeight - 15, player.y));
+            
+            playerEl.style.left = player.x + 'px';
+            playerEl.style.top = player.y + 'px';
+
+            document.getElementById('lblSuaPalavra').innerText = letrasColetadas;
+
+            requestAnimationFrame(loop);
+        }
+
+        iniciarFase();
+        loop();
+    </script>
+</body>
+</html>
